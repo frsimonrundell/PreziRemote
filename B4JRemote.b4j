@@ -1,0 +1,205 @@
+﻿AppType=JavaFX
+Build1=Default,b4j.example
+File1=frmMain.bjl
+FileGroup1=Default Group
+Group=Default Group
+Library1=jcore
+Library2=jfx
+Library3=db2000.b4j.ini
+Library4=jmsgboxes
+Library5=jcustomtoast
+Library6=jnetwork
+Library7=jrandomaccessfile
+NumberOfFiles=1
+NumberOfLibraries=7
+NumberOfModules=0
+Version=6.3
+@EndOfDesignText@
+#Region Project Attributes 
+	#MainFormWidth: 600
+	#MainFormHeight: 600 
+#End Region
+
+Sub Process_Globals
+	Private fx As JFX
+	Private MainForm As Form
+
+	Private btnLeft As Button
+	Private btnRight As Button
+	Private Label1 As Label
+	Private Label2 As Label
+	Private lblVol As Label
+	Private sldVol As Slider
+	Private txtIP As TextField
+	Private txtPort As TextField
+	Private srvIP  As String
+	Private srvPort As Int
+	Private WorkspacePath As String
+	Private INI As INI
+	Private MsgBox As Msgboxes
+	Private Toast As ToastMessageShow
+	Private btnConnect As Button
+	Private strApp As String
+	Private lblStatus As Label
+	Private imgScreenshot As ImageView
+
+	Private astream As AsyncStreams
+	Private client As Socket
+
+
+End Sub
+
+Sub AppStart (Form1 As Form, Args() As String)
+	
+	strApp = "Fr Simon's Controller"
+	MainForm = Form1
+	MainForm.RootPane.LoadLayout("frmMain") 'Load the layout file.
+	MainForm.Show
+	
+	Toast.Initialize("Toast")
+	Toast.ToastIconSize32x32
+	Toast.ToastDuration = 3 '6 is usually Toast.TOAST_LONG_DELAY
+	Toast.ToastTextLocation = Toast.TEXT_CENTER
+	Toast.ToastLocation= Toast.TOAST_CENTER
+	Toast.ToastMessageColor=fx.Colors.White
+
+	Toast.ToastNotificationOwner = MainForm 'this declaration Important
+	
+	WorkspacePath=File.DirApp & "\"
+	Log("Config Path: " & WorkspacePath)
+	
+	If File.Exists(File.DirApp, "preziRemoteconfig.ini") Then
+		readConfig
+		txtPort.Text=srvPort
+		txtIP.Text=srvIP
+	Else
+		MsgBox.Show("Config Needed", strApp)
+
+	End If
+	
+End Sub
+
+Sub MainForm_Closed
+	astream.Close
+End Sub
+
+Sub SetState(Connected As Boolean)
+	If Connected Then
+		lblStatus.Text = "Connected"
+		btnConnect.Text="Disconnect"
+	Else
+		lblStatus.Text = "Disconnected"
+		btnConnect.Text="Connect"
+	End If
+End Sub
+
+Sub btnConnect_Action
+	writeConfig
+	Dim m As Matcher = Regex.Matcher("(\d+\.\d+\.\d+\.\d+)", txtIP.Text)
+	If m.Find Then
+		Dim c As Socket
+		c.Initialize("client")
+		c.Connect(txtIP.Text,txtPort.Text, 10000)
+		Wait For Client_Connected (Successful As Boolean)
+		If Successful Then
+			NewConnection(c)
+		End If
+	Else
+		fx.Msgbox(MainForm, "Invalid address", "")
+	End If
+End Sub
+
+Sub NewConnection (NewSocket As Socket)
+	client = NewSocket
+	astream.InitializePrefix(client.InputStream, True, client.OutputStream, "astream")
+	SetState(True)
+End Sub
+
+Sub astream_NewStream (strDir As String, strFileName As String)
+	'this event is raised when a file was received successfully
+	File.Copy(strDir, strFileName, WorkspacePath, "screenshot.png")
+	File.Delete(strDir, strFileName)
+	
+	Private img As Image
+	
+	img.Initialize(WorkspacePath, "screenshot.png")
+	
+	imgScreenshot.SetImage(img)
+
+		
+End Sub
+
+Sub astream_NewData (Buffer() As Byte)
+Private keypress As String
+keypress=BytesToString(Buffer, 0, Buffer.Length, "utf8")
+ 'Log(keypress & " received")
+
+End Sub
+
+Sub astream_Terminated
+	astream_Error
+End Sub
+
+Sub astream_Error
+	Toast.ToastShow("Remote Network Error: " & astream_Error)
+	SetState(False)
+End Sub
+
+
+Sub CloseExistingConnection
+	If astream.IsInitialized Then
+		astream.Close
+	End If
+	If client.IsInitialized And client.Connected Then
+		client.Close
+	End If
+End Sub
+
+'Return true to allow the default exceptions handler to handle the uncaught exception.
+Sub Application_Error (Error As Exception, StackTrace As String) As Boolean
+	Return True
+End Sub
+
+'---------------------------------------------------------
+' Configuration
+'---------------------------------------------------------
+Sub writeConfig()
+	' write data:
+	INI.SetFileName(WorkspacePath & "preziRemoteconfig.ini")
+	INI.wrNewSection("DATA", "Server Configuration")
+	INI.wrString("DATA", "IP", txtIP.Text, "")
+	INI.wrString("DATA", "Port", txtPort.Text, "")
+	INI.UpDate
+	Toast.ToastShow(strApp & ": Configuration Updated")
+
+End Sub
+
+Sub readConfig()
+	' read data:
+	INI.SetFileName(WorkspacePath & "preziRemoteconfig.ini")
+	srvIP=INI.rdString("DATA", "IP")
+	srvPort=INI.rdString("DATA", "Port")
+	Log("Server " & srvIP & " Port "  & srvPort )
+	
+End Sub
+
+
+Sub btnLeft_Click
+	
+	astream.Write("u".GetBytes("UTF8"))
+	
+End Sub
+
+Sub sldVol_ValueChange (Value As Double)
+	
+	Private strVol As String = "v-" & Round2(Value,0)
+	
+	astream.Write(strVol.GetBytes("UTF8"))
+	
+End Sub
+
+Sub btnRight_Click
+	
+	astream.Write("d".GetBytes("UTF8"))
+	
+End Sub
